@@ -1,0 +1,397 @@
+---
+title: "Final Biostatistics Project"
+subtitle: "SRD-related clinical characteristics and outcomes in covid-19 patients"
+author: "Group 6 : Menghan Zhang, Jiayue Cheng, Wentao Li, Ziwen Zhang"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: 2
+    number_sections: no
+    toc_float:
+      collapsed: no
+      smooth_scroll: yes
+  pdf_document:
+    latex_engine: xelatex
+  word_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(formatR)
+library(lubridate)
+library(readxl)
+library(boot) 
+library(tableone)
+library(gtsummary)
+library(janitor)
+library(car)
+library(knitr)
+library(ggpubr)
+```
+
+# Introduction 
+
+```{r, echo=FALSE}
+srd <- read.csv("srd_cohort.csv")
+```
+
+### Study Aims:
+
+There are two aims in our study. Firstly, we want to investigate the relationship between SRD status and Covid-19 symptoms. Secondly, we also want to investigate the association between SRD-related variables and hospital length of stay along with evaluating the predictor of the largest impact on the outcome we can control for. The expected long-term goal is to enhance the treatment efficacy of Covid-19 in SRD patients and improve patients’ life qualities in the future.
+
+### Background:
+
+Systemic rheumatic diseases (SRD) are chronic, inflammatory autoimmune disorders. Generally, there are more than 100 kinds of SRD, including osteoarthritis, rheumatoid arthritis, systemic lupus erythematosus, etc. SRD can cause damage to a patient’s vital organs, such as the lungs, heart, kidney, or nervous system. Sometimes, SRD may result in serious morbidity or mortality if not properly managed or combined with other diseases, such as Covid-19.
+
+With the spread of covid-19 around the world, people’s awareness of health increased a lot, especially for some patients with the existing disease already, such as systemic rheumatic disease (SRD). Based on some research, we realized that although viruses may worsen rheumatic diseases because of a hyper-inflammatory state, the impact of SAS-Cov-2 on the symptoms of SRD patients is unclear and only several case reports described the progression into clinical autoimmunity in adults.
+
+Therefore, we are interested in whether there is a relationship between SRD and worse symptoms or treatment outcomes, such as longer lengths of hospital stay in the SRD patients’ group. Moreover, we also want to investigate how to improve the outcomes by controlling different variables and find the most important variable to control to save patients in more effective ways.
+
+# Methods
+
+```{r, echo=FALSE}
+datanew <- srd %>% 
+  mutate(ed_date = mdy(ed_date),
+         discharge_date = mdy(discharge_date),
+         hospital_length = as.numeric(discharge_date - ed_date), ## calculate the outcome we are interested in
+         SRD = ifelse(SRD == "SRD", 1, 0)) %>% 
+  filter(!is.na(hospital_length),
+         smoke_cat != "") %>% 
+  select(SRD, age, sex, bmi, smoke_cat, cad, dm, cva, renal_new, active_cancer_new, pulm_new, htn,
+         transplant_new, pregnancy, angiotensin, statins, hydroxychloroquine, antibiotics, steroids_hospital,
+         ivig, tocilizumab, sarilumab, fever:other_symptom, Peak.White.Blood.Cell, Peak.Hemoglobin,  
+         Peak.Lymphocytes, Lowest.Hemoglobin, Lowest.Lymphocytes, Lowest.White.Blood.Cell, hospital_length) 
+```
+
+### Study design:
+
+In our study, observational studies were used to achieve the two aims. Regarding the specific methods, both studies used retrospective cohort studies to investigate the relationship between SRD and Covid-19. For the first part, the exposed group includes the Covid-19 patients with SRD before Covid-19 diagnosis, and the unexposed group includes the Covid-19 patients without SRD. Then we did some statistical analysis to investigate the differences in Covid-19 symptoms for the 2 groups. For the second part, the exposed group and unexposed group are the same as in experiment 1, but we were interested in the SRD-related variables and their relationship to the outcome (hospital length of stay).
+
+### Modeling:
+
+Multiple linear regression was used for our statistical analysis. There are several reasons for choosing MLR rather than survival analysis or logistic regression. Firstly, the dependent variable in our study (length of stay) is continuous, so MLR is better than logistic regression. Secondly, there are no baseline results at the start point in our dataset, and the variables we investigated are not time-dependent variables, so survival analysis is not suitable.
+
+### Data Dimension Reduction:
+
+From the beginning, we did some literature reviews to investigate the potential associations between independent variables and the dependent variable (hospital length of stay). Meanwhile, we conducted the Fisher’s test and Chi-square test for the Covid-19 related symptoms. After these steps, we found that all p-values for Covid-19 related symptoms are over 0.5, which means there is no difference between the means of these variables of the two samples in SRD status. Therefore, 26 variables are left. Then, we conducted the Wilcoxon rank sum test for numeric variables and Fisher’s test, and Chi-square test for the categorical variables in the 26 variables and only 6 variables that were statistically significant with p-value < 0.05. Lastly, we did a correlation test for the rest of the variables to see the association between the outcome and the hospital length of stay. Overall, we filtered out 3 variables including sex, Lowest Hemoglobin, and steroids_hospital. Finally, only 4 variables were analyzed in our multiple linear regression model including SRD, which is corresponding to our aim closely.
+
+# Results
+
+#### **Exploratory and descriptive analyses of interested variables**
+
+$$
+\  
+$$
+```{r, echo=FALSE, fig.height = 3, fig.width = 10.5}
+## plot showing the proportions of 4 descriptive variables between the SRD group
+Fig_1 <- srd %>% 
+  select(SRD, sex, race, bmi_category, smoke_cat) %>% 
+  filter(bmi_category != "",
+         race != "Not Specified") %>% 
+  pivot_longer(cols = -SRD,
+               names_to = 'variable',
+               values_to = 'value') %>% 
+  count(SRD, variable, value) %>% 
+  ggplot(aes(x = value, 
+             y = n, 
+             fill = SRD)) +
+  geom_bar(stat = 'identity',
+           position = 'fill') +
+  facet_wrap( ~ variable,
+             scales = 'free') +
+  scale_fill_brewer(palette = 'Set1') +
+  labs(x = NULL,
+       y = 'Proportion',
+       title = 'Categorical Variables vs. SRD') +
+  theme_test() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+## plot showing the proportions of 4 categorical outcomes between SRD group
+Fig_2 <- srd %>% 
+  select(SRD, intubation1, icu, death, composite_outcome) %>% 
+  pivot_longer(cols = -SRD,
+               names_to = 'variable',
+               values_to = 'value') %>% 
+  count(SRD, variable, value) %>% 
+  ggplot(aes(x = value, 
+             y = n, 
+             fill = SRD)) +
+  geom_bar(stat = 'identity',
+           position = 'fill') +
+  facet_wrap( ~ variable,
+             scales = 'free') +
+  scale_fill_brewer(palette = 'Set1') +
+  labs(x = NULL,
+       y = 'Proportion',
+       title = 'Categorical Outcomes vs. SRD') +
+  theme_test() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+## format the plots on the same line
+EDA1 <- ggarrange(Fig_1, Fig_2,
+                  labels = c("Fig 1", "Fig 2"),
+                  ncol = 2, nrow = 1)
+
+annotate_figure(EDA1,
+                bottom = text_grob("Figure 1: Barplots of descriptive variables between the SRD group                     Figure 2: Barplots of categorical outcomes between the SRD group", 
+                                   color = "blue",
+                                   hjust = 0.5, 
+                                   face = "italic", 
+                                   size = 10))
+```
+
+
+From Figure 1, there may be an obvious relationship between race and sex; Smoking history may have fewer effects on SRD and slightly differences in SRD status by different BMI categories.
+
+From Figure 2, among these 4 outcomes, only the death variable could be used as an effective outcome to compare the differences between the SRD group and the No SRD group. But a lot of data regarding the death variable are missing, which means the sample size will be very small and no sufficient evidence to support our conclusion. Therefore, all these 4 variables are not suitable for the outcome.
+
+$$
+\ 
+$$
+
+```{r, echo=FALSE, fig.height = 3, fig.width = 10}
+## plot the violin plot(with boxplot) showing the relationship between SRD and hospital length of stay
+Fig_3 <- srd %>% 
+  mutate(ed_date = mdy(ed_date),
+         discharge_date = mdy(discharge_date),
+         hospital_length = discharge_date-ed_date) %>% 
+  filter(!is.na(hospital_length)) %>% 
+  ggplot(aes(x = SRD, 
+             y = as.numeric(hospital_length),
+             fill = SRD)) +
+  geom_violin() +
+  geom_boxplot(width=0.1) + 
+  scale_y_log10() +
+  scale_fill_brewer(palette = 'Set1',
+                    direction = -1) +
+  labs(x = 'SRD',
+       y = 'Hospital Length',
+       title = 'Hospital Length vs. SRD') +
+  theme_test() +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = 'none') 
+
+## boxplot showing the distribution of numeric variable age in the SRD group
+Fig_4 <- srd %>% 
+  select(SRD,age) %>% 
+  ggplot(aes(x = SRD, y = age, fill = SRD)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = 'Set1') +
+  labs(x = 'SRD',
+       y = 'Age',
+       title = 'Age vs. SRD') +
+  theme_test() +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = 'none')
+
+## format the plots on the same line
+EDA2 <- ggarrange(Fig_3, Fig_4,
+                  labels = c("Fig 3", "Fig 4"),
+                  ncol = 2, nrow = 1)
+
+annotate_figure(EDA2,
+                bottom = text_grob("Figure 3: Violin plot of the relationship between SRD and hospital length of stay                   Figure 4: Boxplot of the distribution of age between the SRD group", 
+                                   color = "blue",
+                                   hjust = 0.5, 
+                                   face = "italic", 
+                                   size = 10))
+```
+
+
+From Figure 3, the median Hospital length for the SRD group is smaller than the median Hospital length for the No SRD group, and the distribution of hospital length for the SRD group is more concentrated. Moreover, there are some outliers for SRD group data, which may attribute to some bias.
+
+From Figure 4, the median age for the SRD group is similar to the median age for the No SRD group, but the age distribution for the SRD group is more concentrated.
+
+* See Table 1, Table 2 in Appendix attached in the end
+
+Table 1 shows the relationship between SRD status and Covid-19 symptoms. It records the number and percentage of different Covid-19 symptoms and their corresponding p.values between SRD and No SRD groups. Chi-squared test and Fisher test were used to calculate the p.values. The conclusion is there is no relationship between SRD status and Covid-19 symptoms.
+
+Table 2 shows the relationship between the remaining potentially important variables and SRD status. Median and IQR values were shown for numeric variables, and count and percentage were shown for categorical variables.
+
+```{r, echo=FALSE}
+# perform correlation test for the variables after screening
+datanew$sex <- ifelse(datanew$sex == "Female", 1, 0)
+p1 <- cor.test(datanew$sex, datanew$hospital_length)$p.val
+c1 <- cor.test(datanew$sex, datanew$hospital_length)$estimate
+
+datanew$htn <- ifelse(datanew$htn == "Yes", 1, 0)
+p3 <- cor.test(datanew$htn, datanew$hospital_length)$p.val
+c3 <- cor.test(datanew$htn, datanew$hospital_length)$estimate
+
+datanew$angiotensin <- ifelse(datanew$angiotensin == "Yes", 1, 0)
+p4 <- cor.test(datanew$angiotensin, datanew$hospital_length)$p.val
+c4 <- cor.test(datanew$angiotensin, datanew$hospital_length)$estimate
+
+datanew$hydroxychloroquine <- ifelse(datanew$hydroxychloroquine == "Yes", 1, 0)
+p5 <- cor.test(datanew$hydroxychloroquine, datanew$hospital_length)$p.val
+c5 <- cor.test(datanew$hydroxychloroquine, datanew$hospital_length)$estimate
+
+p8 <- cor.test(datanew$Lowest.Hemoglobin, datanew$hospital_length)$p.val
+c8 <- cor.test(datanew$Lowest.Hemoglobin, datanew$hospital_length)$estimate
+
+datanew$steroids_hospital <- ifelse(datanew$steroids_hospital == "Yes", 1, 0)
+p9 <- cor.test(datanew$steroids_hospital, datanew$hospital_length)$p.val
+c9 <- cor.test(datanew$steroids_hospital, datanew$hospital_length)$estimate 
+  
+# make a data frame 
+P.values <- c(p1, p3, p4, p5,p9, p8) %>% round(4)
+Corr <- c(c1,c3,c4,c5,c9,c8) %>% round(2)
+Variable <- c("Sex", "Hypertension", "Angiotensin", "Hydroxychloroquine", "Steroids", "Lowest Hemoglobin")
+dt <- data.frame(Variable, Corr, P.values)
+
+# make it a table
+kable(dt,
+      caption = "**Table 3. Correlation between variables (p < 0.05) \nand hospital length of stay**")
+```
+
+Table 3 shows the relationship between the variables (p < 0.05) filtered out from Table 2 with final outcome hospital length of stay. 
+
+#### **Statistical Analysis**
+
+Interested variables include SRD status (1 denotes for COVID-19 patients who obtained a SRD diagnosis at any point before their COVID-19 diagnosis, and 0 denotes those without SRD), sex (1 denotes for female, and 0 denotes for male), Steroids Hospital (1 denotes for patient receiving steroids treatment during hospitalization, and 0 denotes for not receiving), and Lowest Hemoglobin level (g/dL) during hospitalization. Since we transformed three categorical variables to 0 and 1, and there is also one numerical variable, we firstly scaled the Lowest Hemoglobin level by Min-Max Normalization which rescales values to be in the range between 0 and 1.
+
+```{r, echo=FALSE}
+## normalization for numeric variables
+min_max_norm <- function(x) {
+    (x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE))
+}
+datanew$Lowest.Hemoglobin <- datanew$Lowest.Hemoglobin %>% 
+  min_max_norm()
+
+## fit a linear regression model and plot the diagnostic plots for linear regression analysis
+lmresult <- lm(log(hospital_length) ~ SRD + sex + steroids_hospital + Lowest.Hemoglobin, data = datanew)
+summary(lmresult)
+```
+
+```{r, echo=FALSE, fig.cap="Figure 5 : Diagnostic plots for linear regression analysis"}
+par(mfrow = c(2,2))
+plot(lmresult)
+```
+
+```{r, include = FALSE}
+## select the variables has a p-value < 0.5 to fit the model
+lmresult$coefficients[1] %>% round(3)
+lmresult$coefficients[3] %>% round(3)
+lmresult$coefficients[5] %>% round(3)
+```
+
+To determine the relationship between the screened variables and the hospital length of stay, we then conducted Residual Analysis on Hospital length and interested explanatory variables. However, after model diagnosis, we found that the Residuals versus Fitted plot did not show a fairly random pattern - the scatter points showed a fan shape - heteroskedasticity.
+
+Therefore, we transformed the Hospital length to $log(Hospital LOS)$, then fit a multivariable linear regression (MLR) model as below: 
+
+$LOS$ denotes length of stay; 
+$Lowest\ Hemoglobin$ denotes Lowest hemoglobin level (g/dL) during hospitalization
+
+$$ \widehat {log(Hospital\ LOS)} = - 0.505 * sex - 2.955 * Lowest\ Hemoglobin + 4.025 $$
+
+From this equation, the main predictors of the hospital length of stay for COVID-19 patients are sex and Lowest Hemoglobin level. Therefore, we draw the first conclusion that SRD patients with COVID-19 are not at risk of longer hospital length than non-SRD patients.
+
+```{r, echo=FALSE}
+## make a test on multicollinearity among the independent variables
+vif(lmresult) %>%
+  kable(col.names = "VIFscores",
+        caption = "**Table 4. VIF test on multicollinearity among the independent variables**")
+```
+
+
+Then, in order to check the assumptions of  “No Multicollinearity” for the multivariable linear regression, we calculated variance inflation factor (VIF) to measure how much the variance of the regression coefficient is influenced by multicollinearity in the model. According to our results, all variables in this model did not have linear correlation with each other since the VIF values are all smaller than 5, and thus we can build the multivariable linear regression model with no variable deleted.
+
+We noticed that the estimated coefficients for both the Lowest Hemoglobin ($\beta$ = -2.955) and sex ($\beta$ = -0.505) are negative. With the increase of Lowest Hemoglobin level, the length of hospital stay will decrease, after adjustment for sex. By comparing the coefficients, we can conclude that the Lowest Hemoglobin level is the most important variable predicting the hospital length. This model also implies that the length of hospital stay is longer among the male patients than the female patients, after adjustment for the other predictor. From the adjusted R-squared value ($R^2$ = 0.4949), there is 49.49 percent variation of the dependent variable as explained by the independent variables in this regression model.
+
+# Conclusions 
+
+Based on our analysis, showed that the Lowest Hemoglobin level is the variable that related to the outcome (hospital length of stay) the most. In other words, the Lowest Hemoglobin level is the most crucial predictor for the outcome, and male patients have a higher risk of severe outcome compared to female patients, after adjustment for the Lowest Hemoglobin level. In addition, there is no evidence to believe that Systemic Rheumatic Diseases (SRD) correlates with the hospital length of stay according to the result of our statistical analysis although some literature indicates that Systemic Rheumatic Disease is associated with severe COVID-19 is one of the risk factors [1,2,3]. Finally, we found that race and smoking status also varies in the SRD and non-SRD groups [4,5], indicating that they may also play a role in predicting the outcome of COVID-19 according to the descriptive characteristics. Even though there are also studies supporting our hypothesis, these variables seem not to contribute to the outcome after statistical analysis. These inconsistencies may be due to the small size of this data set.
+
+### Limitation
+
+Firstly, the results and conclusions are from a relatively small sample, which means they may be different from the real world’s situations. Moreover, we filtered the death data, because we are more interested in the patients who are alive and discharged successfully, but it may contribute to bias. Secondly, length of stay is a numeric variable with a right-skewed distribution, thus it may not meet the prerequisite of normal distribution and cause some unavoidable errors regarding the final results and conclusions.
+
+
+
+
+
+# References
+
+* [1] Tiffany Y., Kristin M. D., Naomi J. P., Xiaoqing F., et al. Incident systemic rheumatic disease following COVID-19. The Lancet Rheumatology. 2021 June 01; 3(6) : E402 – E404.
+
+* [2] Siegel C. H., Choi J., D'Angelo D., etal. Outcomes of COVID-19 and Factors Associated With Its Severity Among Hospitalized Patients With and Without Systemic Rheumatic Disease During the First Wave of the Pandemic in New York City. Journal of Clinical Rheumatology. 2022 July 29.		
+
+* [3] Bournia, V. K., Fragoulis, G. E., Mitrou, P., et al. Different Covid-19 Outcomes Among Systemic Rheumatic Diseases: A Nation-wide Cohort Study. Rheumatology. 2022 Aug 03.	
+
+* [4] Neira, D. P., Watts, A., Seashore, J., Polychronopoulou, E., Kuo, Y. F., & Sharma, G. Smoking and risk of COVID-19 hospitalization. Respiratory medicine. 2021 Apr 17; 182: 106414.	
+
+* [5] Ogedegbe G., Ravenell J., Adhikari S., et al. Assessment of Racial/Ethnic Disparities in Hospitalization and Mortality in Patients With COVID-19 in New York City. JAMA Netw Open. 2020;3(12): e2026881. 
+
+
+# Appendix
+
+```{r, echo=FALSE, message = FALSE}
+# make a summary table using tbl_summary
+datanew %>% 
+  select(SRD, fever:other_symptom) %>%
+  filter(fever != "") %>% 
+  select(-conjunctival) %>% 
+  mutate(SRD = ifelse(SRD == 1, "SRD", "No SRD")) %>% 
+  tbl_summary(by = "SRD",
+              label = list(fever ~ "Fever",
+                           cough ~ "Cough",
+                           dyspnea ~ "Dyspnea",
+                           sore_throat ~ "Sore Throat",
+                           rhinorrhea ~ "Rhinorrhea",
+                           headache ~ "Headache",
+                           myalgias ~ "Myalgias",
+                           nausea ~ "Nausea",
+                           diarrhea ~ "Diarrhea",
+                           sputum ~ "Sputum",
+                           presyncope ~ "Presyncope",
+                           chest_pain ~ "Chest Pain",
+                           abdominal_pain ~ "Abdominal Pain",
+                           altered_mental_status ~ "Altered Mental Status",
+                           anosmia ~ "Anosmia",
+                           ageusia ~ "Ageusia",
+                           other_symptom ~ "Other Symptom")) %>% 
+  add_p() %>% 
+  modify_caption("<div style='text-align: middle; font-weight: bold; color: grey'> Table 1.Correlation between Covid-19 symptoms and SRD</div>")
+```
+
+
+
+```{r, echo=FALSE, message = FALSE}
+# make a summary table using tbl_summary
+datanew %>%
+  select(-hospital_length) %>% 
+  select(-c(fever:other_symptom)) %>% 
+  mutate(SRD = ifelse(SRD == 1, "SRD", "No SRD")) %>% 
+  tbl_summary(by = "SRD",
+              missing = "no",
+              label = list(age ~ "Age",
+                           sex ~ "Sex",
+                           bmi ~ "BMI",
+                           pulm_new ~ "Pulmonary",
+                           htn ~ "Hypertension",
+                           angiotensin ~ "Angiotensin",
+                           hydroxychloroquine ~ "Hydroxychloroquine",
+                           smoke_cat ~ "Smoking",
+                           cad ~ "CAD",
+                           dm ~ "Diabetes",
+                           cva ~ "Stroke",
+                           renal_new ~ "Renal Disease",
+                           active_cancer_new ~ "Active Cancer",
+                           transplant_new ~ "Transplant",
+                           pregnancy ~ "Pregnancy",
+                           statins ~ "Statin",
+                           antibiotics ~ "Antibiotics",
+                           steroids_hospital ~ "Steroids",
+                           ivig ~ "IVIG",
+                           tocilizumab ~ "Tocilizumab",
+                           sarilumab ~ "Sarilumab")) %>% 
+  add_p() %>% 
+  modify_caption("<div style='text-align: middle; font-weight: bold; color: grey'> Table 2. Correlation between remaining variables and SRD group</div>")
+```
+
+
