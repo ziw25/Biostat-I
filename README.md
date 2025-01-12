@@ -1,1 +1,1 @@
-# BDS22
+# WCM BDS22 Biostatistics I course
